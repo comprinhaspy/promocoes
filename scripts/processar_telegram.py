@@ -25,7 +25,7 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 ROOT = Path(__file__).resolve().parent.parent
-SITE_DIR = ROOT / "site"
+SITE_DIR = ROOT / "docs"
 FOTOS_DIR = SITE_DIR / "fotos"
 PROMOCOES_PATH = SITE_DIR / "promocoes.json"
 OFFSET_PATH = ROOT / "data" / "offset.txt"
