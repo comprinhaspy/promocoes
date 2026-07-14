@@ -3,8 +3,8 @@ Script que roda periodicamente (via GitHub Actions).
 1. Busca mensagens novas no bot do Telegram.
 2. Para cada mensagem com foto + legenda, manda o texto pra uma IA (Gemini)
    que devolve um título, preço e descrição de venda prontos.
-3. Baixa a foto e salva em site/fotos/.
-4. Adiciona a nova promoção em site/promocoes.json.
+3. Baixa a foto e salva em docs/fotos/.
+4. Adiciona a nova promoção em docs/promocoes.json.
 5. Guarda até onde já leu, pra não repetir mensagem em futuras execuções.
 
 Não precisa mexer neste arquivo. As únicas coisas configuráveis são as
@@ -56,7 +56,7 @@ def http_post_json(url, payload):
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         corpo = e.read().decode("utf-8", errors="replace")
-        print("Erro da API Gemini:", e.code, corpo)
+        print(f"Erro HTTP {e.code} chamando {url}:", corpo)
         raise
 
 
@@ -92,6 +92,21 @@ def baixar_foto(file_id, destino):
     url = f"{TELEGRAM_FILE_API}/{file_path}"
     urllib.request.urlretrieve(url, destino)
     return True
+
+
+def enviar_mensagem(chat_id, texto):
+    """Manda uma mensagem de volta pro chat do Telegram (confirmação ou aviso
+    de erro). Se isso falhar por qualquer motivo, só registra no log e segue
+    em frente — nunca deve derrubar o processamento das promoções."""
+    if not chat_id:
+        return
+    try:
+        http_post_json(
+            f"{TELEGRAM_API}/sendMessage",
+            {"chat_id": chat_id, "text": texto},
+        )
+    except Exception as e:
+        print(f"Não consegui responder no Telegram: {e}")
 
 
 def gerar_texto_promocao(legenda):
@@ -171,45 +186,65 @@ def main():
     promocoes = carregar_promocoes()
     maior_update_id = offset
 
-    for update in updates:
-        maior_update_id = max(maior_update_id, update["update_id"] + 1)
-        msg = update.get("message")
-        if not msg:
-            continue
+    try:
+        for update in updates:
+            # Marca a mensagem como "vista" mesmo que dê erro nela, pra não
+            # ficar tentando a mesma mensagem quebrada pra sempre.
+            maior_update_id = max(maior_update_id, update["update_id"] + 1)
+            msg = update.get("message")
+            if not msg:
+                continue
 
-        legenda = msg.get("caption") or msg.get("text") or ""
-        if not legenda.strip():
-            continue
+            try:
+                legenda = msg.get("caption") or msg.get("text") or ""
+                if not legenda.strip():
+                    continue
 
-        imagem_relativa = ""
-        fotos = msg.get("photo")
-        if fotos:
-            maior_foto = fotos[-1]
-            file_id = maior_foto["file_id"]
-            nome_arquivo = f"{msg['message_id']}.jpg"
-            destino = FOTOS_DIR / nome_arquivo
-            if baixar_foto(file_id, destino):
-                imagem_relativa = f"fotos/{nome_arquivo}"
+                imagem_relativa = ""
+                fotos = msg.get("photo")
+                if fotos:
+                    maior_foto = fotos[-1]
+                    file_id = maior_foto["file_id"]
+                    nome_arquivo = f"{msg['message_id']}.jpg"
+                    destino = FOTOS_DIR / nome_arquivo
+                    if baixar_foto(file_id, destino):
+                        imagem_relativa = f"fotos/{nome_arquivo}"
 
-        gerado = gerar_texto_promocao(legenda)
-        if not gerado:
-            continue
+                gerado = gerar_texto_promocao(legenda)
+                if not gerado:
+                    continue
 
-        nova_promocao = {
-            "id": msg["message_id"],
-            "data": time.strftime(
-                "%Y-%m-%dT%H:%M:%S", time.gmtime(msg.get("date", time.time()))
-            ),
-            "titulo": gerado.get("titulo", "Promoção"),
-            "preco": gerado.get("preco", "Consulte"),
-            "descricao": gerado.get("descricao", legenda[:200]),
-            "imagem": imagem_relativa,
-        }
-        promocoes.append(nova_promocao)
-        print("Adicionada:", nova_promocao["titulo"])
-
-    salvar_promocoes(promocoes)
-    salvar_offset(maior_update_id)
+                nova_promocao = {
+                    "id": msg["message_id"],
+                    "data": time.strftime(
+                        "%Y-%m-%dT%H:%M:%S", time.gmtime(msg.get("date", time.time()))
+                    ),
+                    "titulo": gerado.get("titulo", "Promoção"),
+                    "preco": gerado.get("preco", "Consulte"),
+                    "descricao": gerado.get("descricao", legenda[:200]),
+                    "imagem": imagem_relativa,
+                }
+                promocoes.append(nova_promocao)
+                print("Adicionada:", nova_promocao["titulo"])
+                enviar_mensagem(
+                    msg["chat"]["id"],
+                    f"✅ Promoção publicada no site: {nova_promocao['titulo']} "
+                    f"— {nova_promocao['preco']}",
+                )
+            except Exception as e:
+                # Não deixa uma mensagem com problema derrubar as outras.
+                print(f"Falhou ao processar a mensagem {msg.get('message_id')}: {e}")
+                enviar_mensagem(
+                    msg.get("chat", {}).get("id"),
+                    "⚠️ Não consegui publicar essa promoção agora. "
+                    "Vou tentar de novo automaticamente em alguns minutos.",
+                )
+                continue
+    finally:
+        # Salva o que já foi processado com sucesso, mesmo que algo tenha
+        # dado errado no meio do caminho.
+        salvar_promocoes(promocoes)
+        salvar_offset(maior_update_id)
 
 
 if __name__ == "__main__":
