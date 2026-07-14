@@ -51,8 +51,13 @@ def http_post_json(url, payload):
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        corpo = e.read().decode("utf-8", errors="replace")
+        print("Erro da API Gemini:", e.code, corpo)
+        raise
 
 
 def carregar_offset():
