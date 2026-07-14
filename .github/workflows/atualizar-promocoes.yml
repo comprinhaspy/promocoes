@@ -32,6 +32,6 @@ jobs:
         run: |
           git config user.name "bot-promocoes"
           git config user.email "bot-promocoes@users.noreply.github.com"
-          git add site/promocoes.json site/fotos data/offset.txt
+          git add docs/promocoes.json docs/fotos data/offset.txt
           git diff --cached --quiet || git commit -m "Novas promoções"
           git push
