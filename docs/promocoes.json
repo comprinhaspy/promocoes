@@ -22,5 +22,13 @@
     "preco": "R$ 5.600,00",
     "descricao": "Garanta o seu iPhone 17 de 256GB totalmente lacrado de fábrica. O aparelho acompanha um ano de garantia oficial da Apple.",
     "imagem": "fotos/11.jpg"
+  },
+  {
+    "id": 19,
+    "data": "2026-07-15T00:15:07",
+    "titulo": "Xbox One Series S 512GB",
+    "preco": "R$ 3.500,00",
+    "descricao": "Aproveite a oportunidade para adquirir o seu Xbox One Series S com 512GB de armazenamento. Um console excelente para os seus momentos de diversão por um preço especial.",
+    "imagem": "fotos/19.jpg"
   }
 ]
