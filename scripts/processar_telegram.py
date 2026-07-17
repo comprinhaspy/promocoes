@@ -1,15 +1,14 @@
 """
 Script que roda periodicamente (via GitHub Actions).
-1. Busca mensagens novas no bot do Telegram.
-2. Para cada mensagem com foto + legenda, manda o texto pra uma IA (Gemini)
-   que devolve um título, preço e descrição de venda prontos.
-3. Baixa a foto e salva em docs/fotos/.
-4. Adiciona a nova promoção em docs/promocoes.json.
-5. Guarda até onde já leu, pra não repetir mensagem em futuras execuções.
 
-Não precisa mexer neste arquivo. As únicas coisas configuráveis são as
-variáveis de ambiente TELEGRAM_BOT_TOKEN e GEMINI_API_KEY (ficam nos
-"Secrets" do repositório no GitHub, nunca escritas aqui).
+Fluxo:
+1. Busca mensagens novas no bot do Telegram.
+2. Lê a categoria da mensagem quando vier no formato:
+   Categoria: Iphone
+3. Usa a IA para gerar título, preço e descrição.
+4. Baixa a foto em docs/fotos/.
+5. Salva a promoção em docs/promocoes.json.
+6. Atualiza o offset para não repetir mensagens.
 """
 
 import json
@@ -19,6 +18,7 @@ import sys
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 from pathlib import Path
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -38,27 +38,26 @@ GEMINI_URL = (
     f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 )
 
-
 def http_get_json(url, params=None):
     if params:
         url = url + "?" + urllib.parse.urlencode(params)
     with urllib.request.urlopen(url, timeout=30) as r:
         return json.loads(r.read().decode("utf-8"))
 
-
 def http_post_json(url, payload):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         corpo = e.read().decode("utf-8", errors="replace")
-        print(f"Erro HTTP {e.code} chamando {url}:", corpo)
+        print(f"Erro HTTP {e.code} chamando {url}: {corpo}")
         raise
-
 
 def carregar_offset():
     if OFFSET_PATH.exists():
@@ -67,11 +66,9 @@ def carregar_offset():
             return int(conteudo)
     return 0
 
-
 def salvar_offset(offset):
     OFFSET_PATH.parent.mkdir(parents=True, exist_ok=True)
     OFFSET_PATH.write_text(str(offset))
-
 
 def buscar_atualizacoes(offset):
     params = {"timeout": 0, "allowed_updates": json.dumps(["message"])}
@@ -83,7 +80,6 @@ def buscar_atualizacoes(offset):
         return []
     return resp.get("result", [])
 
-
 def baixar_foto(file_id, destino):
     info = http_get_json(f"{TELEGRAM_API}/getFile", {"file_id": file_id})
     if not info.get("ok"):
@@ -93,11 +89,7 @@ def baixar_foto(file_id, destino):
     urllib.request.urlretrieve(url, destino)
     return True
 
-
 def enviar_mensagem(chat_id, texto):
-    """Manda uma mensagem de volta pro chat do Telegram (confirmação ou aviso
-    de erro). Se isso falhar por qualquer motivo, só registra no log e segue
-    em frente — nunca deve derrubar o processamento das promoções."""
     if not chat_id:
         return
     try:
@@ -108,11 +100,33 @@ def enviar_mensagem(chat_id, texto):
     except Exception as e:
         print(f"Não consegui responder no Telegram: {e}")
 
+def extrair_categoria(legenda):
+    match = re.search(r"categoria\s*:\s*(.+)", legenda, flags=re.IGNORECASE)
+    if not match:
+        return "Geral"
+
+    primeira_linha = match.group(1).splitlines()[0].strip()
+    categoria = primeira_linha.split(",")[0].strip(" -|")
+    return categoria if categoria else "Geral"
+
+def limpar_legenda_categoria(legenda):
+    linhas = legenda.splitlines()
+    linhas_limpas = []
+
+    for linha in linhas:
+        if re.match(r"^\s*categoria\s*:", linha, flags=re.IGNORECASE):
+            linha_sem_prefixo = re.sub(r"^\s*categoria\s*:\s*", "", linha, flags=re.IGNORECASE).strip()
+            if "," in linha_sem_prefixo:
+                resto = linha_sem_prefixo.split(",", 1)[1].strip()
+                if resto:
+                    linhas_limpas.append(resto)
+        else:
+            linhas_limpas.append(linha)
+
+    texto = "\n".join([l for l in linhas_limpas if l.strip()]).strip()
+    return texto or legenda
 
 def gerar_texto_promocao(legenda):
-    """Manda a legenda que o usuário digitou pro Gemini e pede de volta
-    um JSON estruturado com titulo, preco e descricao de venda."""
-
     prompt = f"""Você escreve anúncios curtos e atrativos para promoções de
 produtos importados vendidos no Brasil, a partir do texto que um
 lojista digitou no Telegram.
@@ -156,19 +170,19 @@ Responda SOMENTE com um JSON no formato:
         print("Falha ao interpretar resposta da IA:", e, resp)
         return None
 
-
 def carregar_promocoes():
     if PROMOCOES_PATH.exists():
         try:
-            return json.loads(PROMOCOES_PATH.read_text())
+            return json.loads(PROMOCOES_PATH.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return []
     return []
 
-
 def salvar_promocoes(lista):
-    PROMOCOES_PATH.write_text(json.dumps(lista, ensure_ascii=False, indent=2))
-
+    PROMOCOES_PATH.write_text(
+        json.dumps(lista, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
 
 def main():
     if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
@@ -188,17 +202,18 @@ def main():
 
     try:
         for update in updates:
-            # Marca a mensagem como "vista" mesmo que dê erro nela, pra não
-            # ficar tentando a mesma mensagem quebrada pra sempre.
             maior_update_id = max(maior_update_id, update["update_id"] + 1)
             msg = update.get("message")
             if not msg:
                 continue
 
             try:
-                legenda = msg.get("caption") or msg.get("text") or ""
-                if not legenda.strip():
+                legenda_original = msg.get("caption") or msg.get("text") or ""
+                if not legenda_original.strip():
                     continue
+
+                categoria = extrair_categoria(legenda_original)
+                legenda_limpa = limpar_legenda_categoria(legenda_original)
 
                 imagem_relativa = ""
                 fotos = msg.get("photo")
@@ -210,42 +225,41 @@ def main():
                     if baixar_foto(file_id, destino):
                         imagem_relativa = f"fotos/{nome_arquivo}"
 
-                gerado = gerar_texto_promocao(legenda)
+                gerado = gerar_texto_promocao(legenda_limpa)
                 if not gerado:
                     continue
 
+                timestamp_msg = msg.get("date", int(time.time()))
+                data_formatada = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(timestamp_msg))
+
                 nova_promocao = {
                     "id": msg["message_id"],
-                    "data": time.strftime(
-                        "%Y-%m-%dT%H:%M:%S", time.gmtime(msg.get("date", time.time()))
-                    ),
+                    "data": data_formatada,
+                    "categoria": categoria,
                     "titulo": gerado.get("titulo", "Promoção"),
                     "preco": gerado.get("preco", "Consulte"),
-                    "descricao": gerado.get("descricao", legenda[:200]),
+                    "descricao": gerado.get("descricao", legenda_limpa[:200]),
                     "imagem": imagem_relativa,
                 }
+
                 promocoes.append(nova_promocao)
                 print("Adicionada:", nova_promocao["titulo"])
+
                 enviar_mensagem(
                     msg["chat"]["id"],
-                    f"✅ Promoção publicada no site: {nova_promocao['titulo']} "
-                    f"— {nova_promocao['preco']}",
+                    f"✅ Promoção publicada no site: {nova_promocao['titulo']} — {nova_promocao['preco']} | Categoria: {nova_promocao['categoria']}",
                 )
+
             except Exception as e:
-                # Não deixa uma mensagem com problema derrubar as outras.
                 print(f"Falhou ao processar a mensagem {msg.get('message_id')}: {e}")
                 enviar_mensagem(
                     msg.get("chat", {}).get("id"),
-                    "⚠️ Não consegui publicar essa promoção agora. "
-                    "Vou tentar de novo automaticamente em alguns minutos.",
+                    "⚠️ Não consegui publicar essa promoção agora. Vou tentar de novo automaticamente em alguns minutos.",
                 )
                 continue
     finally:
-        # Salva o que já foi processado com sucesso, mesmo que algo tenha
-        # dado errado no meio do caminho.
         salvar_promocoes(promocoes)
         salvar_offset(maior_update_id)
-
 
 if __name__ == "__main__":
     main()
