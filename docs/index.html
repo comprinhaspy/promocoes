@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -53,7 +54,7 @@
     header{
       background:linear-gradient(135deg,var(--branco) 0%, #F7F9FE 100%);
       border-bottom:1px solid var(--borda);
-      padding:22px 20px 26px;
+      padding:14px 20px 24px;
     }
 
     .header-inner{
@@ -62,36 +63,38 @@
     }
 
     .brand-row{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:20px;
-      flex-wrap:wrap;
+      display:grid;
+      grid-template-columns:minmax(230px, 290px) minmax(0, 1fr);
+      align-items:start;
+      gap:26px;
+      margin-top:10px;
     }
 
     .brand-main{
       display:flex;
-      align-items:center;
+      flex-direction:column;
+      align-items:flex-start;
       gap:18px;
       min-width:0;
     }
 
     .brand-logo{
       width:100%;
-      max-width:380px;
+      max-width:240px;
       height:auto;
       object-fit:contain;
     }
 
     .brand-copy{
-      max-width:560px;
+      max-width:620px;
+      padding-top:6px;
     }
 
     .eyebrow{
       color:var(--vermelho);
       font-weight:800;
-      font-size:12px;
-      letter-spacing:0.16em;
+      font-size:11px;
+      letter-spacing:0.2em;
       text-transform:uppercase;
       margin-bottom:8px;
     }
@@ -99,7 +102,7 @@
     h1{
       margin:0 0 8px;
       font-family:'Montserrat',sans-serif;
-      font-size:clamp(30px,4.6vw,48px);
+      font-size:clamp(34px,4vw,54px);
       line-height:1.02;
       color:var(--azul);
     }
@@ -107,9 +110,9 @@
     .subtitle{
       margin:0;
       color:var(--texto-suave);
-      font-size:15.5px;
-      line-height:1.6;
-      max-width:600px;
+      font-size:16px;
+      line-height:1.55;
+      max-width:620px;
     }
 
     .header-actions{
@@ -117,6 +120,7 @@
       flex-direction:column;
       gap:12px;
       align-items:flex-start;
+      margin-top:-2px;
     }
 
     .pill{
@@ -420,22 +424,36 @@
       }
     }
 
+    @media (max-width:820px){
+      .brand-row{
+        grid-template-columns:1fr;
+        gap:20px;
+      }
+
+      .brand-copy{
+        padding-top:0;
+      }
+    }
+
     @media (max-width:720px){
       header{
         padding:18px 16px 24px;
       }
 
-      .brand-row{
-        align-items:flex-start;
-      }
-
       .brand-main{
-        flex-direction:column;
-        align-items:flex-start;
+        gap:16px;
       }
 
       .brand-logo{
-        max-width:290px;
+        max-width:250px;
+      }
+
+      h1{
+        font-size:clamp(28px,8vw,40px);
+      }
+
+      .subtitle{
+        font-size:15px;
       }
 
       main{
@@ -465,21 +483,22 @@
       <div class="brand-row">
         <div class="brand-main">
           <img class="brand-logo" src="PY-logo_horizontal.png" alt="Logo Comprinhas PY">
-          <div class="brand-copy">
-            <div class="eyebrow">Do Paraguai pra você</div>
-            <h1>Comprinhas PY</h1>
-            <p class="subtitle">
-              Produtos importados com ofertas atualizadas ao longo do dia. Escolha sua categoria,
-              veja o valor, confirme a disponibilidade e finalize pelo WhatsApp.
-            </p>
+
+          <div class="header-actions">
+            <a class="pill pill-primary" href="https://wa.me/5521990685609?text=Olá!%20Quero%20fazer%20um%20pedido%20na%20Comprinhas%20PY." target="_blank" rel="noopener noreferrer">
+              Pedir pelo WhatsApp
+            </a>
+            <span class="pill pill-secondary">Atendimento direto no WhatsApp</span>
           </div>
         </div>
 
-        <div class="header-actions">
-          <a class="pill pill-primary" href="https://wa.me/5521990685609?text=Olá!%20Quero%20fazer%20um%20pedido%20na%20Comprinhas%20PY." target="_blank" rel="noopener noreferrer">
-            Pedir pelo WhatsApp
-          </a>
-          <span class="pill pill-secondary">Atendimento direto no WhatsApp</span>
+        <div class="brand-copy">
+          <div class="eyebrow">Do Paraguai pra você</div>
+          <h1>Comprinhas PY</h1>
+          <p class="subtitle">
+            Produtos importados com ofertas atualizadas ao longo do dia. Escolha sua categoria,
+            veja o valor, confirme a disponibilidade e finalize pelo WhatsApp.
+          </p>
         </div>
       </div>
 
